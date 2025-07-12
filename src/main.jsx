@@ -13,7 +13,7 @@ const root = ReactDOM.createRoot(document.getElementById('root'));
 
 root.render(
   <ThirdwebProvider
-    activeChain={Sepolia}
+    activeChain="sepolia"
     clientId="8022e6ab63f8d1b23ad3be822eedf887"
     supportedWallets={[metamaskWallet()]}  // ✅ Add this line
   >
