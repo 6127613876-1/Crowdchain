@@ -6,6 +6,7 @@ import rollupNodePolyFill from 'rollup-plugin-node-polyfills';
 
 export default defineConfig({
   plugins: [react()],
+  base: './',
   define: {
     global: 'globalThis',
     process: {
