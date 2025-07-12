@@ -4,11 +4,10 @@ import {
   useContract,
   useContractWrite,
   useNetworkMismatch,
+  useSwitchChain,
+  useConnect
 } from '@thirdweb-dev/react';
-import { useConnect } from '@thirdweb-dev/react';
 import { metamaskWallet } from '@thirdweb-dev/react';
-import { useSwitchChain } from '@thirdweb-dev/react';
-
 import { ethers } from 'ethers';
 import {
   collection,
@@ -19,7 +18,6 @@ import {
   doc,
   addDoc
 } from 'firebase/firestore';
-
 import { db } from '../config/auth-firebase';
 
 const StateContext = createContext();
@@ -30,51 +28,56 @@ export const StateContextProvider = ({ children }) => {
   const mismatch = useNetworkMismatch();
   const switchChain = useSwitchChain();
 
-  const { contract, isLoading: contractLoading } = useContract('0x9b1466A8a0994443574f6b35eE2804d5c51Ee641');
+  const { contract, isLoading: contractLoading } = useContract(
+    '0x9b1466A8a0994443574f6b35eE2804d5c51Ee641'
+  );
   const { mutateAsync: createCampaign } = useContractWrite(contract, 'createCampaign');
 
-  // 🦊 Connect function using new API
+  // ✅ Connect to MetaMask + ensure Sepolia
   const connect = async () => {
     try {
       const wallet = await connectWithMetamask(metamaskWallet());
+      if (mismatch && switchChain) {
+        await switchChain(11155111); // Sepolia Chain ID
+      }
       return wallet?.getAddress();
     } catch (err) {
-      console.error("Failed to connect to MetaMask", err);
+      console.error('Failed to connect to MetaMask', err);
       return null;
     }
   };
 
   // 🔁 Auto switch to Sepolia if mismatch
   useEffect(() => {
-    if (mismatch && switchChain) {
-      switchChain(11155111); // Sepolia Chain ID
-    }
-  }, [mismatch, switchChain]);
+    const autoSwitch = async () => {
+      if (address && mismatch && switchChain) {
+        await switchChain(11155111);
+      }
+    };
+    autoSwitch();
+  }, [address, mismatch, switchChain]);
 
+  // 🦊 Listen for account changes
   useEffect(() => {
-  const handleAccountsChanged = (accounts) => {
-    if (accounts.length === 0) {
-      console.warn("MetaMask is locked or no account connected");
-      // Optional: trigger disconnect logic or alert user
-    } else {
-      console.log("MetaMask account changed:", accounts[0]);
-      // Optional: you can trigger a refresh or update state here
+    const handleAccountsChanged = (accounts) => {
+      if (accounts.length === 0) {
+        console.warn("MetaMask is locked or no account connected");
+      } else {
+        console.log("MetaMask account changed:", accounts[0]);
+      }
+    };
+
+    const { ethereum } = window;
+    if (ethereum?.on) {
+      ethereum.on('accountsChanged', handleAccountsChanged);
     }
-  };
 
-  const { ethereum } = window;
-
-  if (ethereum && ethereum.on) {
-    ethereum.on('accountsChanged', handleAccountsChanged);
-  }
-
-  return () => {
-    if (ethereum && ethereum.removeListener) {
-      ethereum.removeListener('accountsChanged', handleAccountsChanged);
-    }
-  };
-}, []);
-
+    return () => {
+      if (ethereum?.removeListener) {
+        ethereum.removeListener('accountsChanged', handleAccountsChanged);
+      }
+    };
+  }, []);
 
   // 🚀 Publish campaign to contract + Firestore
   const publishCampaign = async (form) => {
@@ -97,14 +100,13 @@ export const StateContextProvider = ({ children }) => {
         createdAt: new Date().toISOString(),
       };
 
-      await addDoc(collection(db, "campaigns"), campaignData);
+      await addDoc(collection(db, 'campaigns'), campaignData);
       console.log("Campaign created and stored:", data);
     } catch (error) {
       console.error("Failed to publish campaign:", error);
     }
   };
 
-  // 📥 Get all campaigns
   const getCampaigns = async () => {
     if (!contract) return [];
     const campaigns = await contract.call('getCampaigns');
@@ -119,7 +121,7 @@ export const StateContextProvider = ({ children }) => {
       image: campaign.image,
       isFunded: campaign.isFunded,
       pId: i,
-      status: campaign.status
+      status: campaign.status,
     }));
   };
 
@@ -133,7 +135,6 @@ export const StateContextProvider = ({ children }) => {
     return all.filter((c) => c.status === "pending");
   };
 
-  // 💰 Donate logic
   const donate = async (pId, amount) => {
     try {
       const value = ethers.utils.parseEther(amount.toString());
@@ -146,7 +147,6 @@ export const StateContextProvider = ({ children }) => {
     }
   };
 
-  // 📊 Donator list
   const getDonations = async (pId) => {
     const donations = await contract.call('getDonators', [pId]);
     return donations[0].map((donator, i) => ({
@@ -155,17 +155,16 @@ export const StateContextProvider = ({ children }) => {
     }));
   };
 
-  // ✅ Admin Approve
   const approveCampaign = async (pId) => {
     try {
       await contract.call('approveCampaign', [pId]);
 
-      const q = query(collection(db, "campaigns"), where("pId", "==", pId));
+      const q = query(collection(db, 'campaigns'), where('pId', '==', pId));
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
         const campaignDoc = querySnapshot.docs[0];
-        await updateDoc(doc(db, "campaigns", campaignDoc.id), { status: "approved" });
+        await updateDoc(doc(db, 'campaigns', campaignDoc.id), { status: 'approved' });
       } else {
         console.warn("No Firestore campaign found for pId:", pId);
       }
@@ -175,17 +174,16 @@ export const StateContextProvider = ({ children }) => {
     }
   };
 
-  // ❌ Admin Reject
   const rejectCampaign = async (pId) => {
     try {
       await contract.call('rejectCampaign', [pId]);
 
-      const q = query(collection(db, "campaigns"), where("pId", "==", pId));
+      const q = query(collection(db, 'campaigns'), where('pId', '==', pId));
       const querySnapshot = await getDocs(q);
 
       if (!querySnapshot.empty) {
         const campaignDoc = querySnapshot.docs[0];
-        await updateDoc(doc(db, "campaigns", campaignDoc.id), { status: "rejected" });
+        await updateDoc(doc(db, 'campaigns', campaignDoc.id), { status: 'rejected' });
       } else {
         console.warn("No Firestore campaign found for pId:", pId);
       }
