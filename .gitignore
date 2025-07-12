@@ -8,3 +8,4 @@ vite.config.ts
 .prettierrc
 LICENSE.md
 config
+dist
