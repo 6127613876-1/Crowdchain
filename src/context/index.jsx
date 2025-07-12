@@ -2,12 +2,13 @@ import React, { createContext, useContext, useEffect } from 'react';
 import {
   useAddress,
   useContract,
-  useMetamask,
   useContractWrite,
-  useNetwork,
   useNetworkMismatch,
-  useSwitchChain
 } from '@thirdweb-dev/react';
+import { useConnect } from '@thirdweb-dev/react';
+import { metamaskWallet } from '@thirdweb-dev/react';
+import { useSwitchChain } from '@thirdweb-dev/react';
+
 import { ethers } from 'ethers';
 import {
   collection,
@@ -19,28 +20,63 @@ import {
   addDoc
 } from 'firebase/firestore';
 
-import { db } from '../config/auth-firebase'; // Adjust the path
+import { db } from '../config/auth-firebase';
 
 const StateContext = createContext();
 
 export const StateContextProvider = ({ children }) => {
+  const address = useAddress();
+  const connectWithMetamask = useConnect();
+  const mismatch = useNetworkMismatch();
+  const switchChain = useSwitchChain();
+
   const { contract, isLoading: contractLoading } = useContract('0x9b1466A8a0994443574f6b35eE2804d5c51Ee641');
   const { mutateAsync: createCampaign } = useContractWrite(contract, 'createCampaign');
 
-  const address = useAddress();
-  const connect = useMetamask();
-  const mismatch = useNetworkMismatch();
-  const switchChain = useSwitchChain();
-  const { chainId } = useNetwork();
+  // 🦊 Connect function using new API
+  const connect = async () => {
+    try {
+      const wallet = await connectWithMetamask(metamaskWallet());
+      return wallet?.getAddress();
+    } catch (err) {
+      console.error("Failed to connect to MetaMask", err);
+      return null;
+    }
+  };
 
-  // Auto switch to Sepolia
+  // 🔁 Auto switch to Sepolia if mismatch
   useEffect(() => {
-    if (mismatch) {
-      switchChain(11155111);
+    if (mismatch && switchChain) {
+      switchChain(11155111); // Sepolia Chain ID
     }
   }, [mismatch, switchChain]);
 
-  // Publish new campaign
+  useEffect(() => {
+  const handleAccountsChanged = (accounts) => {
+    if (accounts.length === 0) {
+      console.warn("MetaMask is locked or no account connected");
+      // Optional: trigger disconnect logic or alert user
+    } else {
+      console.log("MetaMask account changed:", accounts[0]);
+      // Optional: you can trigger a refresh or update state here
+    }
+  };
+
+  const { ethereum } = window;
+
+  if (ethereum && ethereum.on) {
+    ethereum.on('accountsChanged', handleAccountsChanged);
+  }
+
+  return () => {
+    if (ethereum && ethereum.removeListener) {
+      ethereum.removeListener('accountsChanged', handleAccountsChanged);
+    }
+  };
+}, []);
+
+
+  // 🚀 Publish campaign to contract + Firestore
   const publishCampaign = async (form) => {
     try {
       const targetAsString = String(form.target);
@@ -68,7 +104,7 @@ export const StateContextProvider = ({ children }) => {
     }
   };
 
-  // Fetch all campaigns
+  // 📥 Get all campaigns
   const getCampaigns = async () => {
     if (!contract) return [];
     const campaigns = await contract.call('getCampaigns');
@@ -87,19 +123,17 @@ export const StateContextProvider = ({ children }) => {
     }));
   };
 
-  // Get campaigns owned by current wallet
   const getUserCampaigns = async () => {
     const all = await getCampaigns();
     return all.filter((c) => c.owner === address);
   };
 
-  // Get only pending campaigns (for admin)
   const getPendingCampaigns = async () => {
     const all = await getCampaigns();
     return all.filter((c) => c.status === "pending");
   };
 
-  // Donate to campaign
+  // 💰 Donate logic
   const donate = async (pId, amount) => {
     try {
       const value = ethers.utils.parseEther(amount.toString());
@@ -112,7 +146,7 @@ export const StateContextProvider = ({ children }) => {
     }
   };
 
-  // Get donors and their donations
+  // 📊 Donator list
   const getDonations = async (pId) => {
     const donations = await contract.call('getDonators', [pId]);
     return donations[0].map((donator, i) => ({
@@ -121,7 +155,7 @@ export const StateContextProvider = ({ children }) => {
     }));
   };
 
-  // Admin: approve a campaign
+  // ✅ Admin Approve
   const approveCampaign = async (pId) => {
     try {
       await contract.call('approveCampaign', [pId]);
@@ -141,7 +175,7 @@ export const StateContextProvider = ({ children }) => {
     }
   };
 
-  // Admin: reject a campaign
+  // ❌ Admin Reject
   const rejectCampaign = async (pId) => {
     try {
       await contract.call('rejectCampaign', [pId]);
