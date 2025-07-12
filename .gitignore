@@ -1,0 +1,10 @@
+node_modules
+.env
+postcss.config.js
+README.md
+tsconfig.json
+tsconfig.node.json
+vite.config.ts
+.prettierrc
+LICENSE.md
+config
