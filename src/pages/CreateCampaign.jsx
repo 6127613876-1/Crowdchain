@@ -49,6 +49,7 @@ const CreateCampaign = () => {
     city: "",
     aadhaar: "",
     pancard: "",
+    documentType: "",
     title: "",
     description: "",
     category: "",
@@ -269,7 +270,7 @@ const CreateCampaign = () => {
         state: form.state,
         city: form.city,
         pincode: form.pincode,
-        documentType: form.documentType,
+        documentType: form.country === "IN" ? form.documentType : "",
         aadhaar: form.aadhaar,
         pancard: form.pancard,
         title: form.title,
@@ -308,94 +309,74 @@ const CreateCampaign = () => {
     setShowModal(false);
   };
 
-  // Fetch Country Data
-  useEffect(() => {
-    async function fetchCountries() {
-      try {
-        const response = await fetch("http://api.geonames.org/countryInfoJSON?lang=en&username=srivigneshs09");
-        const data = await response.json();
-        if (Array.isArray(data.geonames)) {
-          setCountries(data.geonames);
-        } else {
-          console.error('Countries data is not in expected format', data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch countries:', error);
+// Fetch Country List from CountriesNow
+useEffect(() => {
+  const fetchCountries = async () => {
+    try {
+      const response = await fetch("https://countriesnow.space/api/v0.1/countries/positions");
+      const data = await response.json();
+      if (data && data.data) {
+        setCountries(data.data.map((country) => ({
+          name: country.name,
+        })));
       }
+    } catch (err) {
+      console.error("Error fetching countries:", err);
     }
-    fetchCountries();
-  }, []);
+  };
+  fetchCountries();
+}, []);
 
-  // Fetch State Data Based on Country
-  useEffect(() => {
-    if (form.country) {
-      // Find the selected country from the countries array using the form.country value
-      const selectedCountry = countries.find(country => country.countryCode === form.country);
-      const geonameId = selectedCountry ? selectedCountry.geonameId : null;
-  
-      // Proceed if geonameId exists
-      if (geonameId) {
-        async function fetchStates() {
-          try {
-            const response = await fetch(
-              `http://api.geonames.org/childrenJSON?geonameId=${geonameId}&username=srivigneshs09`
-            );
-            const data = await response.json();
-  
-            // Check if geonames exists in the response and map to states
-            if (data.geonames && data.geonames.length > 0) {
-              const statesData = data.geonames.map(state => ({
-                code: state.adminCode1,  // Use adminCode1 as the state code
-                name: state.name || state.adminName1,  // Use name or adminName1 for the state name
-              }));
-              setStates(statesData);  // Update the states state with the fetched states
-            } else {
-              setStates([]);  // In case no states are found, clear the states
-            }
-          } catch (error) {
-            console.error('Error fetching states:', error);
-            setStates([]);  // Clear states in case of error
-          }
-        }
-  
-        fetchStates();
+// Fetch States when country is selected
+useEffect(() => {
+  const fetchStates = async () => {
+    if (!form.country) return;
+    try {
+      const response = await fetch("https://countriesnow.space/api/v0.1/countries/states", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ country: form.country })
+      });
+      const data = await response.json();
+      if (data && data.data && data.data.states) {
+        setStates(data.data.states.map((s) => ({ name: s.name })));
+      } else {
+        setStates([]);
       }
+    } catch (err) {
+      console.error("Error fetching states:", err);
+      setStates([]);
     }
-  }, [form.country, countries]);  // Dependency on form.country and countries array
-  
-  
-  
+  };
+  fetchStates();
+}, [form.country]);
 
-  // Fetch City Data Based on State
-  useEffect(() => {
-    if (form.state) {
-      // Dynamically fetch cities based on selected country and state
-      async function fetchCities() {
-        try {
-          const response = await fetch(
-            `http://api.geonames.org/searchJSON?country=${form.country}&adminCode1=${form.state}&username=srivigneshs09`
-          );
-          const data = await response.json();
-  
-          if (data.geonames && Array.isArray(data.geonames)) {
-            // Map city data from the API response
-            const citiesData = data.geonames.map(city => ({
-              name: city.name,  // City name
-              geonameId: city.geonameId,  // Unique geonameId for city (optional for future use)
-            }));
-            setCities(citiesData);  // Update the cities state with the fetched cities
-          } else {
-            setCities([]);  // In case no cities are found, clear the cities
-          }
-        } catch (error) {
-          console.error('Error fetching cities:', error);
-          setCities([]);  // Clear cities in case of error
-        }
+// Fetch Cities when state is selected
+useEffect(() => {
+  const fetchCities = async () => {
+    if (!form.country || !form.state) return;
+    try {
+      const response = await fetch("https://countriesnow.space/api/v0.1/countries/state/cities", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          country: form.country,
+          state: form.state,
+        })
+      });
+      const data = await response.json();
+      if (data && data.data) {
+        setCities(data.data.map((cityName) => ({ name: cityName })));
+      } else {
+        setCities([]);
       }
-  
-      fetchCities();
+    } catch (err) {
+      console.error("Error fetching cities:", err);
+      setCities([]);
     }
-  }, [form.state, form.country]);  // Dependency on form.state and form.country
+  };
+  fetchCities();
+}, [form.country, form.state]);
 
 
   return (
@@ -465,18 +446,19 @@ const CreateCampaign = () => {
               </div>
               <div>
               <FormField
-                  labelName="Country *"
-                  inputType="select"
-                  value={form.country}
-                  handleChange={(e) => handleFormFieldChange("country", e)}
-                >
-                  <option value="">Select Country</option>
-                  {countries.map((country) => (
-                    <option key={country.geonameId} value={country.countryCode}>
-                      {country.countryName}
-                    </option>
-                  ))}
-                </FormField>
+                labelName="Country *"
+                inputType="select"
+                value={form.country}
+                handleChange={(e) => handleFormFieldChange("country", e)}
+              >
+                <option value="">Select Country</option>
+                {countries.map((country) => (
+                  <option key={country.name} value={country.name}>
+                    {country.name}
+                  </option>
+                ))}
+              </FormField>
+
                 {errors.country && <div className="text-red-500 text-sm mt-1">{errors.country}</div>}
               </div>
 
@@ -488,15 +470,11 @@ const CreateCampaign = () => {
                 handleChange={(e) => handleFormFieldChange("state", e)}
               >
                 <option value="">Select State</option>
-                {states.length > 0 ? (
-                  states.map((state) => (
-                    <option key={state.code} value={state.code}>
-                      {state.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="">No states available</option>
-                )}
+                {states.map((state) => (
+                  <option key={state.name} value={state.name}>
+                    {state.name}
+                  </option>
+                ))}
               </FormField>
               {errors.state && <div className="text-red-500 text-sm mt-1">{errors.state}</div>}
             </div>
@@ -509,15 +487,11 @@ const CreateCampaign = () => {
                   handleChange={(e) => handleFormFieldChange("city", e)}
                 >
                   <option value="">Select City</option>
-                  {cities.length > 0 ? (
-                    cities.map((city) => (
-                      <option key={city.geonameId} value={city.name}>
-                        {city.name}
-                      </option>
-                    ))
-                  ) : (
-                    <option value="">No cities available</option>
-                  )}
+                  {cities.map((city) => (
+                    <option key={city.name} value={city.name}>
+                      {city.name}
+                    </option>
+                  ))}
                 </FormField>
                 {errors.city && <div className="text-red-500 text-sm mt-1">{errors.city}</div>}
               </div>
@@ -647,7 +621,7 @@ const CreateCampaign = () => {
             <FormField
               labelName="Goal Amount *"
               placeholder="Enter goal amount in ETH"
-              inputType="text"
+              inputType="text"Country
               value={form.target}
               handleChange={(e) => handleFormFieldChange("target", e)}
             />
@@ -719,6 +693,9 @@ const CreateCampaign = () => {
             </div>
           </>
         )}
+
+        "http://api.geonames.org/countryInfoJSON?lang=en&username=srivigneshs09"
+
 
         <div className="flex justify-between items-center mt-8">
           {currentStep > 1 && (
